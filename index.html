@@ -3,59 +3,205 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kelvinator</title>
+    <title>Image Compressor</title>
     <style>
         body {
             font-family: Arial, sans-serif;
             margin: 20px;
+            text-align: center;
         }
-        #compressedImages img {
-            max-width: 100%;
+        #uploadContainer {
+            border: 2px dashed #ccc;
+            padding: 20px;
+            margin: 20px auto;
+            width: 80%;
+            cursor: pointer;
+            position: relative;
+            min-height: 200px;
+            background-color: #f9f9f9;
+        }
+        #uploadContainer.hover {
+            border-color: #333;
+        }
+        #uploadContainer input[type="file"] {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            cursor: pointer;
+        }
+        .imageContainer {
+            display: inline-block;
+            margin: 10px;
+            position: relative;
+            border: 1px solid #ccc;
+            padding: 10px;
+            background: #fff;
+        }
+        .imageContainer img {
+            max-width: 100px;
+            max-height: 100px;
+        }
+        .progressContainer {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.5);
+            color: #fff;
+            padding: 5px;
+            text-align: center;
+        }
+        #compressedImages {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin-top: 20px;
+        }
+        .controls {
             margin-top: 20px;
         }
     </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.7.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
 </head>
 <body>
-    <h1>Kelvinator - Image Compressor</h1>
-    <input type="file" id="uploadImage" accept="image/*" multiple>
-    <br><br>
-    <label for="qualitySlider">Compression Quality: <span id="qualityValue">70</span>%</label>
-    <input type="range" id="qualitySlider" min="0" max="100" value="70">
-    <br><br>
-    <button id="compressButton">Compress Image</button>
-    <br><br>
+    <h1>Image Compressor</h1>
+    <div id="uploadContainer">
+        <input type="file" id="uploadImage" accept="image/*" multiple>
+        <p>Drag Your Files Here or Click to Upload</p>
+        <div id="compressedImages"></div>
+    </div>
+    <div class="controls">
+        <label for="qualitySlider">Compression Quality: <span id="qualityValue">70</span>%</label>
+        <input type="range" id="qualitySlider" min="0" max="100" value="70">
+        <br><br>
+        <button id="compressButton">Compress Images</button>
+        <br><br>
+        <button id="downloadAllButton" style="display: none;">Download All as ZIP</button>
+    </div>
     <canvas id="canvas" style="display: none;"></canvas>
-    <div id="compressedImages"></div>
 
     <script>
         let selectedFiles = [];
 
-        document.getElementById('uploadImage').addEventListener('change', function (event) {
-            selectedFiles = Array.from(event.target.files);
-            document.getElementById('compressedImages').innerHTML = '';
-        });
+        const uploadContainer = document.getElementById('uploadContainer');
+        const uploadImage = document.getElementById('uploadImage');
+        const qualitySlider = document.getElementById('qualitySlider');
+        const qualityValue = document.getElementById('qualityValue');
+        const compressButton = document.getElementById('compressButton');
+        const compressedImagesContainer = document.getElementById('compressedImages');
+        const downloadAllButton = document.getElementById('downloadAllButton');
 
-        document.getElementById('qualitySlider').addEventListener('input', function () {
-            document.getElementById('qualityValue').innerText = this.value;
-            if (selectedFiles.length > 0) {
-                compressImages();
+        uploadImage.addEventListener('change', handleFiles);
+        uploadContainer.addEventListener('dragover', handleDragOver);
+        uploadContainer.addEventListener('dragleave', handleDragLeave);
+        uploadContainer.addEventListener('drop', handleDrop);
+        qualitySlider.addEventListener('input', updateQuality);
+        compressButton.addEventListener('click', compressImages);
+        downloadAllButton.addEventListener('click', downloadAllAsZip);
+
+        function handleFiles(event) {
+            addFilesToList(event.target.files);
+        }
+
+        function handleDragOver(event) {
+            event.preventDefault();
+            uploadContainer.classList.add('hover');
+        }
+
+        function handleDragLeave(event) {
+            uploadContainer.classList.remove('hover');
+        }
+
+        function handleDrop(event) {
+            event.preventDefault();
+            uploadContainer.classList.remove('hover');
+            addFilesToList(event.dataTransfer.files);
+        }
+
+        function addFilesToList(files) {
+            for (const file of files) {
+                selectedFiles.push(file);
+                displayFile(file);
             }
-        });
+        }
 
-        document.getElementById('compressButton').addEventListener('click', function () {
-            if (selectedFiles.length > 0) {
-                compressImages();
-            }
-        });
+        function displayFile(file) {
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                const imageContainer = document.createElement('div');
+                imageContainer.className = 'imageContainer';
 
-        function compressImages() {
-            const quality = document.getElementById('qualitySlider').value / 100;
+                const img = document.createElement('img');
+                img.src = e.target.result;
+                imageContainer.appendChild(img);
+
+                const progressContainer = document.createElement('div');
+                progressContainer.className = 'progressContainer';
+                progressContainer.innerText = 'Ready for compression';
+                imageContainer.appendChild(progressContainer);
+
+                compressedImagesContainer.appendChild(imageContainer);
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function updateQuality() {
+            qualityValue.innerText = qualitySlider.value;
+        }
+
+        async function compressImages() {
+            const quality = qualitySlider.value / 100;
             const canvas = document.getElementById('canvas');
             const ctx = canvas.getContext('2d');
-            const compressedImagesContainer = document.getElementById('compressedImages');
             compressedImagesContainer.innerHTML = '';
 
-            selectedFiles.forEach(file => {
+            const zip = new JSZip();
+
+            for (const file of selectedFiles) {
+                const dataUrl = await compressImage(file, quality, canvas, ctx);
+                const compressedFileName = 'compressed_' + file.name;
+
+                const imageContainer = document.createElement('div');
+                imageContainer.className = 'imageContainer';
+
+                const compressedImage = document.createElement('img');
+                compressedImage.src = dataUrl;
+
+                const downloadLink = document.createElement('a');
+                downloadLink.href = dataUrl;
+                downloadLink.download = compressedFileName;
+                downloadLink.textContent = 'Download ' + file.name;
+
+                const sizeLabel = document.createElement('label');
+                sizeLabel.innerText = `Compressed Image Size: ${getSizeInKB(dataUrl)} KB`;
+
+                const progressContainer = document.createElement('div');
+                progressContainer.className = 'progressContainer';
+                progressContainer.innerText = `100% of ${getSizeInKB(dataUrl)} KB`;
+
+                imageContainer.appendChild(compressedImage);
+                imageContainer.appendChild(downloadLink);
+                imageContainer.appendChild(document.createElement('br'));
+                imageContainer.appendChild(sizeLabel);
+                imageContainer.appendChild(progressContainer);
+                compressedImagesContainer.appendChild(imageContainer);
+
+                zip.file(compressedFileName, dataUrl.split(',')[1], { base64: true });
+            }
+
+            if (selectedFiles.length > 1) {
+                downloadAllButton.style.display = 'inline-block';
+            } else {
+                downloadAllButton.style.display = 'none';
+            }
+        }
+
+        function compressImage(file, quality, canvas, ctx) {
+            return new Promise((resolve) => {
                 const reader = new FileReader();
                 reader.onload = function (e) {
                     const img = new Image();
@@ -82,23 +228,7 @@
                         ctx.drawImage(img, 0, 0, width, height);
 
                         const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
-
-                        const compressedImage = document.createElement('img');
-                        compressedImage.src = compressedDataUrl;
-
-                        const downloadLink = document.createElement('a');
-                        downloadLink.href = compressedDataUrl;
-                        downloadLink.download = 'compressed_' + file.name;
-                        downloadLink.textContent = 'Download ' + file.name;
-
-                        const sizeLabel = document.createElement('label');
-                        sizeLabel.innerText = `Compressed Image Size: ${getSizeInKB(compressedDataUrl)} KB`;
-
-                        compressedImagesContainer.appendChild(compressedImage);
-                        compressedImagesContainer.appendChild(downloadLink);
-                        compressedImagesContainer.appendChild(document.createElement('br'));
-                        compressedImagesContainer.appendChild(sizeLabel);
-                        compressedImagesContainer.appendChild(document.createElement('br'));
+                        resolve(compressedDataUrl);
                     }
                     img.src = e.target.result;
                 }
@@ -110,6 +240,21 @@
             const byteString = atob(dataUrl.split(',')[1]);
             const byteLength = byteString.length;
             return (byteLength / 1024).toFixed(2);
+        }
+
+        function downloadAllAsZip() {
+            const zip = new JSZip();
+
+            const images = compressedImagesContainer.querySelectorAll('.imageContainer img');
+            images.forEach((img, index) => {
+                const dataUrl = img.src;
+                const name = 'compressed_' + selectedFiles[index].name;
+                zip.file(name, dataUrl.split(',')[1], { base64: true });
+            });
+
+            zip.generateAsync({ type: 'blob' }).then((content) => {
+                saveAs(content, 'compressed_images.zip');
+            });
         }
     </script>
 </body>
